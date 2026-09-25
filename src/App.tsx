@@ -16,8 +16,10 @@ import LinearGauge from './components/LinearGauge';
 import FuzzyGaugeComponent from './components/FuzzyGauge';
 import CardHand from './components/CardHand';
 import LookupTableComponent from './components/LookupTable';
+import ProbabilityChart from './components/ProbabilityChart';
 import { UniversalCharacterSheet } from './types';
 import { createStandardDeck } from './engine';
+import { analyzeDiceRoll, getProbabilityColor } from './probability';
 
 type TabId = 'gauges' | 'skills' | 'rolls' | 'fuzzy' | 'cards' | 'tables' | 'triggers' | 'log';
 
@@ -153,32 +155,28 @@ function App() {
 
           {/* Main Content */}
           <main className="flex-1 min-w-0">
-            {/* Last Roll Result Banner */}
+            {/* Last Roll Result Banner - Compact */}
             {lastRollResult && (
-              <div className={`mb-6 p-4 rounded-xl border transition-all ${
+              <div className={`mb-4 px-4 py-2 rounded-lg border transition-all flex items-center justify-between ${
                 lastRollResult.isSuccess
-                  ? 'bg-emerald-900/20 border-emerald-700/30'
-                  : 'bg-red-900/20 border-red-700/30'
+                  ? 'bg-emerald-900/10 border-emerald-700/20'
+                  : 'bg-red-900/10 border-red-700/20'
               }`}>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-lg">{lastRollResult.isSuccess ? '✅' : '❌'}</span>
                   <div>
-                    <p className="text-xs text-gray-400 mb-1">Last Roll</p>
-                    <p className="text-sm font-mono text-gray-300">{lastRollResult.rawExpression}</p>
+                    <p className="text-xs text-gray-400">Last Roll: <span className="text-gray-300 font-mono">{lastRollResult.rawExpression}</span></p>
                   </div>
-                  <div className="text-right">
-                    <p className={`text-2xl font-bold ${lastRollResult.isSuccess ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {lastRollResult.total}
-                    </p>
-                    {lastRollResult.successes !== undefined && (
-                      <p className={`text-xs ${lastRollResult.successes > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {lastRollResult.successes} {lastRollResult.successes === 1 ? 'success' : 'successes'}
-                        {lastRollResult.successes < 0 && ' (BOTCH!)'}
-                      </p>
-                    )}
-                    {lastRollResult.degreeOfSuccess && (
-                      <p className="text-xs text-gray-500 capitalize">{lastRollResult.degreeOfSuccess.replace('_', ' ')}</p>
-                    )}
-                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {lastRollResult.successes !== undefined && (
+                    <span className={`text-sm font-bold ${lastRollResult.successes > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {lastRollResult.successes} successes
+                    </span>
+                  )}
+                  <span className={`text-xl font-bold ${lastRollResult.isSuccess ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {lastRollResult.total}
+                  </span>
                 </div>
               </div>
             )}
@@ -231,65 +229,89 @@ function App() {
 
             {activeTab === 'rolls' && (
               <div>
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                  🎲 Dice Pools
-                  <span className="text-xs text-gray-500 font-normal">
-                    (Click to roll)
-                  </span>
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    📈 Probability Analysis
+                    <span className="text-xs text-gray-500 font-normal">
+                      (Statistical odds before rolling)
+                    </span>
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-600">
+                      {sheet.dieRolls.length} dice pools analyzed
+                    </span>
+                  </div>
+                </div>
+
+                {/* Overview Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                  {sheet.dieRolls.slice(0, 4).map(roll => {
+                    const analysis = analyzeDiceRoll(roll);
+                    const prob = analysis.successAnalysis.successProbability;
+                    const color = getProbabilityColor(prob);
+                    return (
+                      <div key={roll.id} className="bg-gray-800/40 rounded-lg p-3 border border-gray-700/30">
+                        <p className="text-xs text-gray-500 truncate">{roll.name}</p>
+                        <p className="text-lg font-bold mt-1" style={{ color }}>
+                          {(prob * 100).toFixed(0)}%
+                        </p>
+                        <p className="text-xs text-gray-600">
+                          {roll.dice.map(d => `${d.count}${d.type}`).join('+')}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Detailed Charts */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {sheet.dieRolls.map(roll => (
-                    <div
+                    <ProbabilityChart
                       key={roll.id}
-                      className="rounded-xl border border-gray-700/50 bg-gray-900/50 p-4 hover:border-gray-600/50 transition-colors cursor-pointer group"
-                      onClick={() => performRoll(roll.id)}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-sm font-bold text-gray-200 group-hover:text-white transition-colors">
-                          {roll.name}
-                        </h3>
-                        <span className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700/50">
-                          {roll.dice.map(d => `${d.count}${d.type}`).join(' + ')}
-                        </span>
-                      </div>
-                      {roll.description && (
-                        <p className="text-xs text-gray-500 mb-3">{roll.description}</p>
-                      )}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {roll.dice.map((d, i) => (
-                          <span key={i} className="text-xs bg-gray-800/80 px-2 py-1 rounded text-gray-400 border border-gray-700/30">
-                            {d.count}× {d.type}
-                            {d.label && <span className="text-gray-600 ml-1">({d.label})</span>}
-                          </span>
-                        ))}
-                        {roll.modifiers.map((m, i) => (
-                          <span key={i} className="text-xs bg-blue-900/30 px-2 py-1 rounded text-blue-400 border border-blue-700/30">
-                            {m.value > 0 ? '+' : ''}{m.value} {m.source}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="mt-3 flex items-center gap-2">
-                        <span className="text-xs text-gray-600">
-                          {roll.successCondition === 'count_successes' && `Success: ≥${roll.successThreshold}`}
-                          {roll.successCondition === 'target_number' && `Target: ${roll.targetNumber}`}
-                          {roll.successCondition === 'sum_total' && 'Sum total'}
-                          {roll.successCondition === 'degrees_of_success' && `Degrees vs ${roll.targetNumber}`}
-                        </span>
-                        {roll.exploding && <span className="text-xs text-orange-400">💥 Exploding</span>}
-                      </div>
-                      <div className="mt-3 pt-3 border-t border-gray-800/50 flex items-center justify-between">
-                        <button className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold transition-colors">
-                          🎲 Roll Now
-                        </button>
-                        {lastRollResult?.rollId === roll.id && (
-                          <span className={`text-xs font-bold ${lastRollResult.isSuccess ? 'text-emerald-400' : 'text-red-400'}`}>
-                            Result: {lastRollResult.total}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                      rollConfig={roll}
+                      onRoll={() => performRoll(roll.id)}
+                      lastResult={lastRollResult?.rollId === roll.id ? {
+                        total: lastRollResult.total,
+                        isSuccess: lastRollResult.isSuccess,
+                        successes: lastRollResult.successes,
+                        rawExpression: lastRollResult.rawExpression,
+                      } : null}
+                    />
                   ))}
                 </div>
+
+                {/* Comparison Matrix */}
+                {sheet.dieRolls.length > 1 && (
+                  <div className="mt-6 rounded-xl border border-gray-700/50 bg-gray-900/50 p-4">
+                    <h3 className="text-sm font-bold text-gray-200 mb-4 flex items-center gap-2">
+                      📊 Comparative Overview
+                    </h3>
+                    <div className="space-y-3">
+                      {sheet.dieRolls.map(roll => {
+                        const analysis = analyzeDiceRoll(roll);
+                        const prob = analysis.successAnalysis.successProbability;
+                        const color = getProbabilityColor(prob);
+                        return (
+                          <div key={roll.id} className="flex items-center gap-3">
+                            <span className="text-xs text-gray-400 w-36 truncate">{roll.name}</span>
+                            <div className="flex-1 h-5 bg-gray-800 rounded-full overflow-hidden relative">
+                              <div
+                                className="h-full rounded-full transition-all duration-700"
+                                style={{ width: `${prob * 100}%`, backgroundColor: color }}
+                              />
+                              <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white mix-blend-difference">
+                                {(prob * 100).toFixed(1)}%
+                              </span>
+                            </div>
+                            <span className="text-xs text-gray-500 w-20 text-right">
+                              {roll.dice.map(d => `${d.count}${d.type}`).join('+')}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
